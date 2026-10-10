@@ -1,0 +1,69 @@
+{
+  "name": "thinking-orbs-vue",
+  "version": "0.1.0",
+  "description": "Dotted thought-orb loading indicators for AI & agent UIs \u2014 Vue 3 port of thinking-orbs (nine tuned states, three sizes, auto dark/light)",
+  "type": "module",
+  "private": false,
+  "files": [
+    "dist-lib"
+  ],
+  "main": "./dist-lib/index.cjs",
+  "module": "./dist-lib/index.js",
+  "types": "./dist-lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist-lib/index.d.ts",
+      "import": "./dist-lib/index.js",
+      "require": "./dist-lib/index.cjs"
+    },
+    "./engine": {
+      "types": "./dist-lib/engine/index.d.ts",
+      "import": "./dist-lib/engine.js",
+      "require": "./dist-lib/engine.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit -p tsconfig.app.json && vite build",
+    "build:lib": "vue-tsc --noEmit -p tsconfig.lib.json && vite build --config vite.lib.config.ts",
+    "preview": "vite preview",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.app.json && vue-tsc --noEmit -p tsconfig.lib.json",
+    "test:parity": "tsx scripts/parity.ts",
+    "shot": "node scripts/shot.mjs",
+    "verify": "npm run test:parity && npm run verify:ui",
+    "verify:ui": "node scripts/verify-ui.mjs"
+  },
+  "peerDependencies": {
+    "vue": "^3.4.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.12",
+    "vite-plugin-dts": "^4.5.4",
+    "vue": "^3.5.22",
+    "vue-tsc": "^3.1.1"
+  },
+  "keywords": [
+    "vue",
+    "loading",
+    "loader",
+    "spinner",
+    "ai",
+    "agent",
+    "llm",
+    "canvas",
+    "animation",
+    "dark-mode",
+    "thinking-orbs"
+  ],
+  "license": "MIT",
+  "author": "Vue port of thinking-orbs by Jakub Antalik",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Jakubantalik/Libraries.dev.git",
+    "directory": "packages/thinking-orbs"
+  }
+}
