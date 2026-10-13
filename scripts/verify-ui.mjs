@@ -199,14 +199,51 @@ const report = await evaluate(`(async () => {
   out.geometryChangedOnShape = hash(afterShape) !== hash(before);
   out.snippetAfterShape = /shape: 1/.test(document.querySelector('#playground pre.code')?.textContent ?? '');
 
-  // 3. size seg 20px → the playground canvas resizes its backing store
-  const size20 = [...document.querySelectorAll('#playground .seg button')].find((b) => b.textContent.trim() === '20px');
+  // 3. tuned-size buttons jump the size, and the backing store follows
+  const size20 = [...document.querySelectorAll('#playground .seg button')].find((b) => b.textContent.trim() === '20');
   size20?.click();
   await sleep(300);
   const pgCanvas = document.querySelector('#playground canvas');
   out.playgroundSizeAttr = pgCanvas?.style.width;
   out.playgroundBackingPx = pgCanvas ? pgCanvas.width : 0;
   out.expectedBackingPx = Math.round(20 * Math.min(2, window.devicePixelRatio || 1));
+
+  // 3b. arbitrary sizes — values that are not one of the three tuned presets
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const sizeSlider = document.querySelector('#pg-size');
+  const pg = () => document.querySelector('#playground canvas');
+  const setSize = async (v) => {
+    sizeSlider.value = String(v);
+    sizeSlider.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(320);
+  };
+  const dotsCell = () => [...document.querySelectorAll('.readout b')][1].textContent.replace(/[^0-9]/g, '');
+
+  await setSize(47);
+  out.anySizeCss = pg()?.style.width;
+  out.anySizeBacking = pg()?.width;
+  out.anySizeExpectedBacking = Math.round(47 * dpr);
+  out.anySizePainted = ink(pg()) > 0;
+  out.anySizeDots = Number(dotsCell());
+
+  await setSize(16);
+  out.tinyCss = pg()?.style.width;
+  out.tinyPainted = ink(pg()) > 0;
+
+  await setSize(113);
+  out.oddSizeDots = Number(dotsCell());
+  out.oddSizePainted = ink(pg()) > 0;
+
+  // 3c. the budget: 'working' at 256px would draw ~15k dots uncapped
+  sel.value = 'working';
+  sel.dispatchEvent(new Event('change', { bubbles: true }));
+  await setSize(256);
+  out.budgetCapped = !!document.querySelector('.readout .capped');
+  out.budgetDots = Number(dotsCell());
+  out.budgetPainted = ink(pg()) > 0;
+  await setSize(64);
+  out.afterBudgetDots = Number(dotsCell());
+  out.afterBudgetCapped = !!document.querySelector('.readout .capped');
 
   // 4. paused toggle freezes: two frame fingerprints of THAT canvas
   const pausedBox = [...document.querySelectorAll('#playground .switch input')][1];
@@ -250,7 +287,7 @@ const report = await evaluate(`(async () => {
   out.inkFollowsTheme = { dark: darkInk?.map(Math.round), light: lightInk?.map(Math.round) };
 
   // leave the playground on a photogenic, tuned setting for the screenshot
-  const size64 = [...document.querySelectorAll('#playground .seg button')].find((b) => b.textContent.trim() === '64px');
+  const size64 = [...document.querySelectorAll('#playground .seg button')].find((b) => b.textContent.trim() === '64');
   size64?.click();
   dotsSlider.value = '1';
   dotsSlider.dispatchEvent(new Event('input', { bubbles: true }));
@@ -288,7 +325,27 @@ const checks = [
   ['hero chips switch state', report.heroState === 'shaping' && report.heroSnippetHasShaping === true],
   ['playground has 9 states', report.playgroundStateOptions === 9],
   ['opts.shape renders', report.shapeControlsVisible === true && report.snippetAfterShape === true],
-  ['size seg resizes backing store', report.playgroundSizeAttr === '20px' && report.playgroundBackingPx === report.expectedBackingPx],
+  ['size buttons resize the backing store', report.playgroundSizeAttr === '20px' && report.playgroundBackingPx === report.expectedBackingPx],
+  [
+    'arbitrary size 47px resizes + paints',
+    report.anySizeCss === '47px' &&
+      report.anySizeBacking === report.anySizeExpectedBacking &&
+      report.anySizePainted === true &&
+      report.anySizeDots > 0
+  ],
+  ['tiny size 16px still paints', report.tinyCss === '16px' && report.tinyPainted === true],
+  [
+    'odd size 113px differs from its neighbours',
+    report.oddSizePainted === true && report.oddSizeDots !== report.anySizeDots
+  ],
+  [
+    'dot budget caps working@256',
+    report.budgetCapped === true &&
+      report.budgetDots > 0 &&
+      report.budgetDots <= 4000 &&
+      report.budgetPainted === true
+  ],
+  ['budget releases at 64px', report.afterBudgetCapped === false && report.afterBudgetDots < report.budgetDots],
   ['paused freezes the frame', report.frozenWhenPaused === true],
   ['resumes when unpaused', report.animatesAgain === true],
   ['dots slider changes readout', report.dotsReadout[0] !== report.dotsReadout[1]],

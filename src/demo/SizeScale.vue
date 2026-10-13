@@ -1,8 +1,10 @@
 <script setup lang="ts">
-// Sizes: 64 / 32 / 20 are separate designs, not a scale factor — each carries
-// its own dot count, dot size and speed. Plus the 20px inline scale in prose.
+// Sizes: `64` and `20` are hand-tuned anchors, `32` is the law between them —
+// and so is every other value. The second row is the point: nothing about the
+// design depends on the size being one of three numbers.
 import { ThinkingOrb } from '@lib';
-import { ORB_SIZES, ORB_STATES } from '@lib/types';
+import { SIZE_MAX, SIZE_MIN } from '@lib/presets';
+import { TUNED_SIZES, ORB_STATES } from '@lib/types';
 import type { CSSProperties } from 'vue';
 
 const LABEL: Record<number, string> = {
@@ -10,6 +12,9 @@ const LABEL: Record<number, string> = {
   32: 'compact avatar',
   20: 'inline text'
 };
+
+/** Arbitrary sizes — the law evaluated off the anchors, both directions. */
+const ANY_SIZES = [16, 24, 40, 56, 80, 112, 160, 224];
 
 // The canvas is `display: block` out of the box (like the React original);
 // for inline prose, override it on the style prop.
@@ -23,12 +28,33 @@ const inlineOrb: CSSProperties = {
 <template>
   <div class="sizes">
     <div class="size-row card">
-      <div v-for="s in ORB_SIZES" :key="s" class="size-cell">
+      <div v-for="s in TUNED_SIZES" :key="s" class="size-cell">
         <div class="size-canvas">
           <ThinkingOrb state="searching" :size="s" />
         </div>
         <div class="mono size-id">{{ s }}<span class="mute">px</span></div>
         <div class="tiny mute">{{ LABEL[s] }}</div>
+      </div>
+    </div>
+
+    <div class="any-card card">
+      <div class="any-head">
+        <div class="tiny mute any-label">
+          any size — {{ SIZE_MIN }}…{{ SIZE_MAX }}px, no snapping
+        </div>
+        <p class="dim any-note">
+          Between 20 and 64 the density, dot radius and speed interpolate in log space — the
+          200-odd values below are the same curve evaluated off the three anchors, in both
+          directions.
+        </p>
+      </div>
+      <div class="any-row">
+        <div v-for="s in ANY_SIZES" :key="s" class="any-item">
+          <div class="any-canvas">
+            <ThinkingOrb state="searching" :size="s" />
+          </div>
+          <span class="mono any-id">{{ s }}</span>
+        </div>
       </div>
     </div>
 
@@ -45,7 +71,8 @@ const inlineOrb: CSSProperties = {
         <ThinkingOrb state="working" :size="20" :style="inlineOrb" /> working through your request,
         <ThinkingOrb state="searching" :size="20" :style="inlineOrb" /> searching the repository, or
         <ThinkingOrb state="connecting" :size="20" :style="inlineOrb" /> connecting to the tool
-        server.
+        server. Any size works the same way — 17px reads like a 20px one, because the law answers
+        for it.
       </p>
     </div>
   </div>
@@ -98,6 +125,49 @@ const inlineOrb: CSSProperties = {
 .size-id {
   font-size: 15px;
   color: var(--ink);
+}
+
+.any-card {
+  padding: 18px 20px;
+  display: grid;
+  gap: 16px;
+}
+
+.any-head {
+  display: grid;
+  gap: 5px;
+}
+
+.any-label {
+  letter-spacing: 0.08em;
+}
+
+.any-note {
+  font-size: 13px;
+  max-width: 82ch;
+}
+
+.any-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 22px;
+}
+
+.any-item {
+  display: grid;
+  gap: 6px;
+  place-items: center;
+}
+
+.any-canvas {
+  display: grid;
+  place-items: end center;
+}
+
+.any-id {
+  font-size: 11.5px;
+  color: var(--ink-mute);
 }
 
 .inline-card {

@@ -7,19 +7,44 @@
 export { default as ThinkingOrb } from './ThinkingOrb.vue';
 
 export {
-  ORB_SIZES,
   ORB_STATES,
+  TUNED_SIZES,
   type ThinkingOrbProps,
   type OrbState,
   type OrbSize,
-  type OrbTheme
+  type OrbTheme,
+  type TunedSize
 } from './types';
 
 export { useResolvedDark, useReducedMotion } from './theme';
 
-// Power-user surface: the resolved presets + raw frame painters, for
-// consumers driving their own canvas outside Vue.
-export { resolvePreset, STATE_TO_MODE, type ModeKey, type Resolved, type Preset, PRESETS } from './presets';
+// Preset resolution. 64 / 32 / 20 resolve to the hand-tuned rows; any other
+// size (12–256) is the log-space law between the two anchors.
+export {
+  resolvePreset,
+  interpolatePreset,
+  presetFor,
+  anchorT,
+  clampSize,
+  STATE_TO_MODE,
+  SIZE_MIN,
+  SIZE_MAX,
+  type ModeKey,
+  type Resolved,
+  type Preset,
+  PRESETS
+} from './presets';
+
+// The draw-profile pipeline: size law + dots/dotSize multipliers + raw opts +
+// the per-frame dot budget, in one place for the component, the demo and any
+// consumer driving its own canvas.
+export {
+  resolveDrawOptions,
+  presetAt,
+  DOT_BUDGET,
+  type DrawOptionsInput,
+  type ResolvedDraw
+} from './tuning';
 export { MODE_DRAWS, MODE_FRAMES } from './engine/registry';
 export { countDots, scaleCounts, scaleRadii, BASE_PROFILES } from './engine/profiles';
 

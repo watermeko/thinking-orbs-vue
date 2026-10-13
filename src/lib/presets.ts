@@ -5,7 +5,7 @@
 
 import type { ModeOpts } from './engine/profiles';
 import { BASE_PROFILES, scaleCounts, scaleRadii } from './engine/profiles';
-import type { OrbSize, OrbState } from './types';
+import { TUNED_SIZES, type OrbSize, type OrbState, type TunedSize } from './types';
 
 export type ModeKey =
   | 'orbits'
@@ -93,22 +93,115 @@ export interface Resolved {
   opts: ModeOpts;
 }
 
+// ─── The size law ─────────────────────────────────────────────────────
+//
+// Upstream ships three rows per mode: 64 and 20 hand-tuned, 32 interpolated.
+// That 32 row turns out to be *exactly* a log-space interpolation of the two
+// anchors — every knob, including the mode extras — so the only reason sizes
+// were a fixed set is that the table only ever listed three points of a
+// continuous curve. Evaluating that curve at any size gives arbitrary sizes
+// for free:
+//
+//     value(s) = v64 · (v20 / v64) ^ t(s),   t(s) = ln(s/64) / ln(20/64)
+//
+// (log space because the knobs are ratios — dot counts, radius multipliers
+// and speeds all scale multiplicatively with size.) Verified against the
+// shippped 32 rows to within 5e-5, i.e. their own rounding.
+
+/** The hand-tuned anchor the law reads at 64px. */
+const ANCHOR_HI: TunedSize = 64;
+/** The hand-tuned anchor the law reads at 20px. */
+const ANCHOR_LO: TunedSize = 20;
+
+/** Smallest supported size: below ~14px the dots sit on the sub-pixel floor. */
+export const SIZE_MIN = 12;
+/** Largest supported size: beyond this the dot budget has long since bound. */
+export const SIZE_MAX = 256;
+
+/** Clamp a requested size into the supported range (NaN → the 64 anchor). */
+export function clampSize(size: number): number {
+  if (!Number.isFinite(size)) return ANCHOR_HI;
+  return Math.min(SIZE_MAX, Math.max(SIZE_MIN, size));
+}
+
+function isTuned(size: number): size is TunedSize {
+  return (TUNED_SIZES as readonly number[]).includes(size);
+}
+
+/** 0 at the 64px anchor, 1 at the 20px anchor, log-linear in between. */
+export function anchorT(size: number): number {
+  return Math.log(size / ANCHOR_HI) / Math.log(ANCHOR_LO / ANCHOR_HI);
+}
+
+/** Log-space interpolation of one knob (linear when either end is ≤ 0). */
+function lerpKnob(hi: number, lo: number, t: number): number {
+  if (hi > 0 && lo > 0) return Math.exp(Math.log(hi) + t * (Math.log(lo) - Math.log(hi)));
+  return hi + t * (lo - hi);
+}
+
+/**
+ * The preset a mode uses at an arbitrary size: log-space interpolation of the
+ * 64 and 20 rows, `extra` keys included (a key present in only one anchor is
+ * treated as a constant).
+ */
+export function interpolatePreset(mode: ModeKey, size: number): Preset {
+  const hi = PRESETS[mode][ANCHOR_HI];
+  const lo = PRESETS[mode][ANCHOR_LO];
+  const t = anchorT(size);
+
+  const preset: Preset = {
+    speed: lerpKnob(hi.speed, lo.speed, t),
+    count: lerpKnob(hi.count, lo.count, t),
+    size: lerpKnob(hi.size, lo.size, t)
+  };
+
+  const hiExtra = hi.extra ?? {};
+  const loExtra = lo.extra ?? {};
+  const keys = new Set([...Object.keys(hiExtra), ...Object.keys(loExtra)]);
+  if (keys.size) {
+    const extra: ModeOpts = {};
+    for (const k of keys) {
+      const a = hiExtra[k] ?? loExtra[k]!;
+      const b = loExtra[k] ?? hiExtra[k]!;
+      extra[k] = lerpKnob(a, b, t);
+    }
+    preset.extra = extra;
+  }
+  return preset;
+}
+
+/**
+ * The preset for a (mode, size) pair: the hand-tuned row where one exists
+ * (so 64 / 32 / 20 stay bit-identical to upstream), the law everywhere else.
+ */
+export function presetFor(mode: ModeKey, size: number): Preset {
+  return isTuned(size) ? PRESETS[mode][size] : interpolatePreset(mode, size);
+}
+
+// Bounded, because an arbitrary size means an unbounded key space: dragging a
+// size slider must not grow this map per frame. Oldest entry out.
+const CACHE_LIMIT = 128;
 const cache = new Map<string, Resolved>();
 
 /** Resolve a (state, size) pair to its mode + fully-scaled draw options. */
 export function resolvePreset(state: OrbState, size: OrbSize): Resolved {
-  const key = `${state}-${size}`;
+  const s = clampSize(size);
+  const key = `${state}-${s}`;
   const hit = cache.get(key);
   if (hit) return hit;
 
   const mode = STATE_TO_MODE[state];
-  const preset = PRESETS[mode][size];
+  const preset = presetFor(mode, s);
   let opts: ModeOpts = { ...BASE_PROFILES[mode] };
   if (preset.count !== 1) opts = scaleCounts(opts, preset.count);
   if (preset.size !== 1) opts = scaleRadii(opts, preset.size);
   if (preset.extra) opts = { ...opts, ...preset.extra };
 
   const resolved: Resolved = { mode, speed: preset.speed, opts };
+  if (cache.size >= CACHE_LIMIT) {
+    const oldest = cache.keys().next().value;
+    if (oldest !== undefined) cache.delete(oldest);
+  }
   cache.set(key, resolved);
   return resolved;
 }

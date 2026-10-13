@@ -73,7 +73,7 @@ watch(theme, applyTheme, { immediate: true });
       <section id="sizes" class="section">
         <div class="section-head">
           <h2>Sizes &amp; inline scale</h2>
-          <p class="dim">Two tuned designs plus one interpolated in between.</p>
+          <p class="dim">Two hand-tuned anchors, one verified midpoint — and every value in between.</p>
         </div>
         <SizeScale />
       </section>
@@ -81,7 +81,7 @@ watch(theme, applyTheme, { immediate: true });
       <section id="playground" class="section">
         <div class="section-head">
           <h2>Playground</h2>
-          <p class="dim">Every prop, live — with the resolved engine state underneath.</p>
+          <p class="dim">Every prop, live — size included, at any value, with the resolved engine state underneath.</p>
         </div>
         <Playground v-model:theme-mode="theme" />
       </section>

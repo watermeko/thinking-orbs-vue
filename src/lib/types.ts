@@ -40,16 +40,37 @@ export const ORB_STATES: readonly OrbState[] = [
 ];
 
 /**
- * Rendered size in CSS pixels. 64 (chat-avatar scale) and 20 (inline-text
- * scale) are hand-tuned designs, not a scale factor — each carries its own
- * dot count, dot size and speed. 32 (compact avatar scale) sits between
- * them and is interpolated from the two, in log space because those knobs
- * are ratios; it reads correctly but has not had a tuning pass of its own.
+ * Rendered size in CSS pixels — **any number**, not a fixed set.
+ *
+ * The engine's geometry is continuous in `size` (every mode lays its dots out
+ * as fractions of the frame), so a size only has to pick the *tuning*: the dot
+ * count, dot radius multiplier and speed that make the mark read well at that
+ * scale. `64` (chat-avatar scale) and `20` (inline-text scale) are the two
+ * hand-tuned anchors; every other size is the log-space law between them
+ * (see `interpolatePreset`), which is exactly how the shipped `32` was made.
+ *
+ * Practical notes:
+ * - `12`–`256` is the supported range (`clampSize`); below ~14px dots hit the
+ *   sub-pixel floor and read as a blob, and above ~256px they are wasted.
+ * - Between 20 and 64 the law is validated by `32`. Outside it the same law
+ *   extrapolates (measured ink density stays in a 0.07–0.17 band), but the
+ *   largest mode keeps its tuned look to about 128–160px, after which dot
+ *   radii sit on the 0.3px floor — nudge `dotSize` there if you want bolder
+ *   dots.
+ * - Counts round to whole dots, so resizing shows discrete density steps
+ *   rather than a smooth scale — and where `ring` / `ribbon` multiply their
+ *   rounded lane count by a `bandMul` that is tuned *down* as the orb grows,
+ *   crossing an integer can dip the density by up to ~10% for one pixel of
+ *   size. It never collapses. To animate scale smoothly, keep one `size` and
+ *   animate a CSS transform.
  */
-export type OrbSize = 64 | 32 | 20;
+export type OrbSize = number;
 
-/** Every shipped size preset, largest first. */
-export const ORB_SIZES: readonly OrbSize[] = [64, 32, 20];
+/** The sizes that were hand-tuned (or, for 32, verified against the law). */
+export const TUNED_SIZES = [64, 32, 20] as const;
+
+/** A hand-tuned preset size. */
+export type TunedSize = (typeof TUNED_SIZES)[number];
 
 /**
  * Theme mode.
@@ -74,7 +95,9 @@ export interface ThinkingOrbProps {
   /** Which animation to show. @default 'working' */
   state?: OrbState;
 
-  /** Tuned size preset — 64, 32 or 20 CSS px. @default 64 */
+  /** Tuned size preset — 64 or 20 are hand-tuned, 32 is verified, anything
+   *  else (12–256) is the log-space law between the two anchors.
+   *  @default 64 */
   size?: OrbSize;
 
   /** Theme mode; `auto` detects from the host project. @default 'auto' */
@@ -125,6 +148,16 @@ export interface ThinkingOrbProps {
    * the current state does not read does nothing.
    */
   opts?: ModeOpts;
+
+  /**
+   * Per-frame dot budget. The size law grows a mode's density with the size,
+   * and `working` grows *quadratically* (its orbit count and its ghosts-per-
+   * orbit both scale), reaching ~15k dots at 256px. When the derived profile
+   * would exceed this, the density is scaled back until it fits — the orb
+   * stays balanced, it just stops gaining detail. `0` disables the cap.
+   * @default 4000
+   */
+  maxDots?: number;
 
   /**
    * Escape hatch below `opts`: replace the state's geometry outright. The

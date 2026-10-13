@@ -19,6 +19,10 @@
 
 export { MODE_FRAMES, MODE_DRAWS } from './registry';
 export { resolvePreset, STATE_TO_MODE, type ModeKey, type Resolved } from '../presets';
+// Extension over upstream: arbitrary sizes (the log-space law between the 64
+// and 20 anchors) plus the density/radius multipliers and dot budget, so a
+// custom renderer resolves a profile the same way the Vue component does.
+export { resolveDrawOptions, DOT_BUDGET, type ResolvedDraw, type DrawOptionsInput } from '../tuning';
 export type { Dot, Line, OrbFrame, ModeFrame, ModeDraw } from './types';
 export type { ModeOpts } from './profiles';
 export type { OrbState, OrbSize } from '../types';

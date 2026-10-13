@@ -1,7 +1,8 @@
 import { MODE_FRAMES } from '@lib/engine/registry';
-import { countDots, scaleCounts, scaleRadii, type ModeOpts } from '@lib/engine/profiles';
-import { resolvePreset } from '@lib/presets';
-import type { OrbSize, OrbState } from '@lib/types';
+import type { ModeOpts } from '@lib/engine/profiles';
+import type { ModeKey } from '@lib/presets';
+import { resolveDrawOptions, type DrawOptionsInput, type ResolvedDraw } from '@lib/tuning';
+import type { OrbState } from '@lib/types';
 
 export interface StateMeta {
   state: OrbState;
@@ -22,39 +23,21 @@ export const STATE_META: readonly StateMeta[] = [
   { state: 'shaping', verb: 'Shaping', blurb: 'A dotted outline morphs circle → triangle → square.' }
 ];
 
-/** The same `dots` / `dotSize` / `opts` scaling the component applies. */
-export function resolveOpts(
-  state: OrbState,
-  size: OrbSize,
-  dots = 1,
-  dotSize = 1,
-  optsOverride?: ModeOpts
-): { mode: string; speed: number; opts: ModeOpts } {
-  const { mode, speed, opts: presetOpts } = resolvePreset(state, size);
-  // resolvePreset caches — never mutate its result
-  let opts = dots !== 1 ? scaleCounts(presetOpts, Math.max(0.1, dots)) : presetOpts;
-  if (dotSize !== 1) opts = scaleRadii(opts, Math.max(0.1, dotSize));
-  if (optsOverride) opts = { ...opts, ...optsOverride };
-  return { mode, speed, opts };
-}
-
 /**
- * Dots a resolved profile draws per frame.
- *
- * `countDots` sums the count knobs, which is right for eight of the nine
- * modes. `shaping` has no count knob — its density is `iconD`, a multiplier
- * the morph mode turns into `max(6, round(34 * iconD))` dots — so `countDots`
- * reports 0 for it. Mirror that formula here so the readout is honest.
+ * Resolve a profile exactly the way the component does — the library's own
+ * pipeline, so the demo's readout can never drift from the painted pixels.
  */
-export function dotsPerFrame(state: OrbState, opts: ModeOpts): number {
-  if (state === 'shaping') return Math.max(6, Math.round(34 * (opts.iconD ?? 1)));
-  return countDots(opts);
+export function resolveOrb(
+  state: OrbState,
+  size: number,
+  input: DrawOptionsInput = {}
+): ResolvedDraw {
+  return resolveDrawOptions(state, size, input);
 }
 
 /** Mean geometry time per frame, in ms — pure math, no canvas. */
-export function benchFrame(state: OrbState, size: OrbSize, opts: ModeOpts, runs = 60): number {
-  const { mode } = resolvePreset(state, size);
-  const fn = MODE_FRAMES[mode as keyof typeof MODE_FRAMES];
+export function benchFrame(mode: ModeKey, size: number, opts: ModeOpts, runs = 60): number {
+  const fn = MODE_FRAMES[mode];
   fn(size, 0, opts);
   const t0 = performance.now();
   for (let i = 0; i < runs; i++) fn(size, i * 0.0163, opts);

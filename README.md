@@ -3,8 +3,9 @@
 Dotted thought-orb loading indicators for AI & agent UIs — **Vue 3 port of
 [`thinking-orbs`](https://github.com/Jakubantalik/Libraries.dev/tree/main/packages/thinking-orbs)**.
 
-Nine hand-tuned animated states, three tuned sizes, rendered on a plain 2D
-canvas — no WebGL, no filters, identical pixels in Chrome, Safari and Firefox.
+Nine hand-tuned animated states at **any size** (12–256px, the shipped
+`64` / `32` / `20` included), rendered on a plain 2D canvas — no WebGL, no
+filters, identical pixels in Chrome, Safari and Firefox.
 
 ---
 
@@ -51,17 +52,55 @@ Nine verbs an agent can be doing, each a distinct animation:
 | `breathing` | `ring` | a face-on ring slowly morphing |
 | `shaping` | `morph` | a dotted outline morphs circle → triangle → square |
 
-## Sizes
+## Sizes — any number, not a three-item menu
 
-`64` (chat-avatar scale) and `20` (inline-text scale) are separate designs, not
-a scale factor — each carries its own dot count, dot size and speed. `32`
-(compact avatar) sits between them, interpolated in log space; it reads
-correctly but has not had a tuning pass of its own.
-
-```vue
+```tsx
 <ThinkingOrb state="working" :size="64" />
-<ThinkingOrb state="working" :size="20" />
+<ThinkingOrb state="working" :size="47" />   <!-- any value, 12–256 -->
 ```
+
+`64` (chat-avatar scale) and `20` (inline-text scale) are the hand-tuned
+anchors. **Every other size is derived**: the dot count, dot radius multiplier
+and speed interpolate between the two anchors in log space, because those knobs
+are ratios. That is not a new invention — it is exactly how the shipped `32`
+was made:
+
+```
+value(s) = v₆₄ · (v₂₀ / v₆₄) ^ t(s)        t(s) = ln(s/64) / ln(20/64)
+```
+
+`npm run test:sizes` checks the law against all nine shipped `32` rows and
+reproduces them to 4.8e-4 relative — the table's own four-significant-digit
+rounding. So `64` / `32` / `20` keep their hand-tuned values bit-for-bit, and
+everything else is the same curve evaluated off the anchors, in both
+directions.
+
+| size | `working` dots / mean radius | `searching` dots / mean radius |
+|---|---|---|
+| 20 | 39 / 0.545px | 54 / 0.522px |
+| 64 | 516 / 0.387px | 204 / 0.691px |
+| 128 | 2,716 / 0.333px | 466 / 0.825px |
+| 256 | 14,784 / 0.305px | 1,034 / 0.989px |
+
+The ink density (Σr² over the orb's area) stays inside a 0.07–0.17 band across
+that whole range, so a large orb reads like the same object, not a different
+one.
+
+Caveats, measured rather than guessed:
+
+- **Range.** `12`–`256` px. Below ~14px dots sit on the 0.3px sub-pixel floor;
+above ~256px the extra dots buy nothing. `size` is clamped, and snapped to a
+whole number of device pixels so it never renders soft.
+- **The largest mode stops gaining detail.** `working` grows *quadratically*
+(its orbit count and its ghosts-per-orbit both scale: 516 dots at 64px → ~15k at
+256px → ~82k at 512px). A per-frame dot budget applies above that — see
+`maxDots`.
+- **Counts quantise.** Knobs round to whole dots, and `ring` / `ribbon`
+multiply their rounded lane count by a `bandMul` that is tuned *down* as the orb
+grows, so where `round(lanes · bandMul)` crosses an integer the density wobbles
+by up to ~10% for one pixel of size (measured: `composing` 9.6% at 25px,
+`breathing` 9.5% at 42px). It never collapses. To animate scale smoothly,
+keep one `size` and animate a CSS transform instead of the prop.
 
 The canvas is `display: block` out of the box (as upstream). For inline prose,
 override it on the `style` prop:
@@ -93,7 +132,7 @@ backgrounds — with the mode picked automatically from the host project:
 | prop | type | default | notes |
 |---|---|---|---|
 | `state` | `OrbState` | `'working'` | one of the nine states |
-| `size` | `64 \| 32 \| 20` | `64` | tuned preset, not a scale factor |
+| `size` | `number` | `64` | any value 12–256; 64/32/20 jump to the hand-tuned rows, everything else is the size law |
 | `theme` | `'auto' \| 'dark' \| 'light'` | `'auto'` | live-resolved |
 | `speed` | `number` | `1` | multiplier on the preset's baked speed |
 | `paused` | `boolean` | `false` | freeze on the current frame |
@@ -101,6 +140,7 @@ backgrounds — with the mode picked automatically from the host project:
 | `dotSize` | `number` | `1` | radius multiplier for every dot |
 | `color` | `string` | — | optional ink tint; depth ramp preserved |
 | `opts` | `ModeOpts` | — | advanced: the engine's own knobs, merged last |
+| `maxDots` | `number` | `4000` | per-frame dot budget; `0` disables. Only `working` really needs it |
 | `frame` | `ModeFrame` | — | escape hatch: replace the geometry outright |
 | `gravity` | `boolean \| GravityOptions` | `false` | the orb pulls at the pointer¹ |
 | `ariaLabel` | `string` | per state | template `aria-label` binds here |
@@ -122,8 +162,12 @@ place.
 ```ts
 import {
   ThinkingOrb,                       // the component
-  ORB_STATES, ORB_SIZES,             // the nine states, the three sizes
-  resolvePreset, STATE_TO_MODE,      // (state, size) → { mode, speed, opts } — cached
+  ORB_STATES, TUNED_SIZES,           // the nine states, the three hand-tuned sizes
+  resolveDrawOptions,                // (state, size, {dots,dotSize,opts,maxDots}) → finished profile
+  resolvePreset, STATE_TO_MODE,      // (state, size) → { mode, speed, opts } — cached, any size
+  interpolatePreset, presetFor,      // the size law, if you want it directly
+  clampSize, SIZE_MIN, SIZE_MAX,     // 12 / 256, and the clamp between them
+  DOT_BUDGET, presetAt,
   MODE_FRAMES, MODE_DRAWS,           // pure geometry / canvas painters
   paintFrame, finalizeFrame,         // frame painting + the z-sort/clamp step
   countDots, scaleCounts, scaleRadii, BASE_PROFILES,
@@ -148,12 +192,13 @@ import {
 
 ## Verification
 
-Two independent checks, both runnable against a local dev server.
+Three independent checks — geometry, the size law, and the live UI.
 
 ```bash
 npm run test:parity   # geometry vs. the upstream golden vectors
+npm run test:sizes    # the size law, 12–256px × 9 states
 npm run verify:ui     # mounts the demo headless and drives it via CDP
-npm run verify        # both
+npm run verify        # all three
 ```
 
 **`test:parity`** replays every frozen case in `spec/orbs-golden.json` — the
@@ -173,12 +218,31 @@ parity: thinking-orbs@0.3.1 → thinking-orbs-vue
 PASS — geometry matches the React original.
 ```
 
+**`test:sizes`** proves the extension: it re-derives all nine shipped `32`
+rows from the two anchors (worst relative delta 4.8e-4, i.e. the table's own
+rounding), confirms `64` / `32` / `20` still resolve to *exactly* the
+hand-tuned options (252 values compared against upstream's pipeline
+transcribed inline), sweeps 11,025 frames across 12–256px checking for NaN,
+degenerate frames and out-of-range ink, asserts the dot count grows with size
+up to rounding, and proves the budget binds where it is needed:
+
+```
+working @256  uncapped 14,784  →  capped 3,795 (budget 4000)
+monotone: 7/9 states step-free; rounding wobble: composing 9.6% @25px, breathing 9.5% @42px
+11025 frames / 11,302,975 dots, largest 14,784 (uncapped)
+
+PASS — arbitrary sizes hold: 9 modes, 12–256px,
+       11025 frames checked, tuned rows untouched, budget enforced.
+```
+
 **`verify:ui`** launches the local Chromium headless, drives the demo over the
 DevTools Protocol (no test dependencies — Node's global `WebSocket` + `fetch`),
-and asserts: 43 canvases mount and every one paints ink; `role="img"` +
-per-state labels everywhere; the hero chips, playground state select, size
-seg, `opts.shape` escape hatch, `paused`, and the dots slider all re-render
-live; and pinning `data-theme` on `<html>` flips every orb's ink.
+and asserts 17 things: 43 canvases mount and every one paints ink; `role="img"`
++ per-state labels everywhere; the hero chips, playground state select, size
+buttons, arbitrary size slider (`47px`, `16px`, `113px` all resize the backing
+store and keep painting), `opts.shape` escape hatch, `paused`, and the dots
+slider all re-render live; the budget caps `working` at 256px and releases at
+64px; and pinning `data-theme` on `<html>` flips every orb's ink.
 
 ## Project layout
 
@@ -186,19 +250,24 @@ live; and pinning `data-theme` on `<html>` flips every orb's ink.
 src/lib/                 the Vue port (this is the library)
   ThinkingOrb.vue        the component: canvas + loop + theme + a11y
   theme.ts               useResolvedDark / useReducedMotion composables
+  tuning.ts              size law + dots/dotSize + dot budget → draw profile
   types.ts               OrbState / OrbSize / OrbTheme / props
-  presets.ts             (state, size) → mode + scaled opts  ← shared verbatim
+  presets.ts             three tuned rows + the log-space size law
   gravity.ts             document-level pointer tracker        ← shared verbatim
   engine/                9 mode painters, profiles, registry    ← shared verbatim
 src/demo/                the live demo app (hero, gallery, playground, agent mock)
 scripts/parity.ts        golden-vector check
+scripts/size-law.ts      arbitrary-size + budget checks
 scripts/verify-ui.mjs    headless CDP interaction + a11y check
 spec/orbs-golden.json    upstream golden vectors (MIT, © Jakub Antalik)
 ```
 
-Everything under `src/lib/engine/`, plus `presets.ts` and `gravity.ts`, is the
-upstream TypeScript **unchanged** — that is what makes the parity check a
-one-line assertion instead of a visual judgement.
+Everything under `src/lib/engine/`, plus `gravity.ts`, is the upstream
+TypeScript **unchanged** — which is what makes the parity check a one-line
+assertion instead of a visual judgement. `presets.ts` is the one shared file
+this port extends (upstream's three rows plus the law they imply); the tuned
+rows and the options they resolve to are untouched, and `test:sizes` proves it
+value by value.
 
 ## Vue vs. React API
 

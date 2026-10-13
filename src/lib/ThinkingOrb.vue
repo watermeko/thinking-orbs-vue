@@ -14,11 +14,11 @@
 import { computed, onBeforeUnmount, onMounted, ref, useAttrs, watch } from 'vue';
 import type { StyleValue } from 'vue';
 import { paintFrame, type OrbTint } from './engine/core';
-import { scaleCounts, scaleRadii } from './engine/profiles';
 import { MODE_FRAMES } from './engine/registry';
 import { attachGravity } from './gravity';
-import { resolvePreset } from './presets';
+import { clampSize } from './presets';
 import { useReducedMotion, useResolvedDark } from './theme';
+import { resolveDrawOptions } from './tuning';
 import type { ModeOpts } from './engine/profiles';
 import type { ModeFrame } from './engine/types';
 import type { GravityOptions } from './gravity';
@@ -39,6 +39,7 @@ const props = withDefaults(
     opts?: ModeOpts;
     frame?: ModeFrame;
     gravity?: boolean | GravityOptions;
+    maxDots?: number;
     ariaLabel?: string;
     style?: StyleValue;
   }>(),
@@ -91,8 +92,26 @@ const reduced = useReducedMotion();
 const optsKey = computed(() => (props.opts ? JSON.stringify(props.opts) : ''));
 const gravityKey = computed(() => (props.gravity ? JSON.stringify(props.gravity) : ''));
 
+// ─── Size ─────────────────────────────────────────────────────────────
+
+/** Device-pixel-ratio cap, matching upstream. */
+const DPR_CAP = 2;
+function currentDpr(): number {
+  return Math.min(DPR_CAP, (typeof devicePixelRatio !== 'undefined' && devicePixelRatio) || 1);
+}
+
+/**
+ * The requested size, clamped into the supported range and snapped to a whole
+ * number of device pixels — a fractional CSS size over a rounded backing store
+ * is what makes a canvas look soft.
+ */
+const renderSize = computed(() => {
+  const dpr = currentDpr();
+  return Math.round(clampSize(props.size) * dpr) / dpr;
+});
+
 const canvasStyle = computed<StyleValue>(() => [
-  { width: `${props.size}px`, height: `${props.size}px`, display: 'block' },
+  { width: `${renderSize.value}px`, height: `${renderSize.value}px`, display: 'block' },
   props.style ?? {}
 ]);
 
@@ -121,22 +140,23 @@ function setup() {
   const canvas = canvasRef.value;
   if (!canvas) return;
 
-  const dpr = Math.min(2, (typeof devicePixelRatio !== 'undefined' && devicePixelRatio) || 1);
-  canvas.width = Math.round(props.size * dpr);
-  canvas.height = Math.round(props.size * dpr);
+  const size = renderSize.value;
+  const dpr = currentDpr();
+  canvas.width = Math.round(size * dpr);
+  canvas.height = Math.round(size * dpr);
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
 
-  const size = props.size;
   const isDark = dark.value;
-  const { mode, speed: baseSpeed, opts: presetOpts } = resolvePreset(props.state, size);
-  // `dots` rescales every count knob of the resolved preset with the same
-  // sqrt-paired scaler the presets themselves use, so density changes keep
-  // the mode's balance. resolvePreset caches — never mutate its result.
-  let opts = props.dots !== 1 ? scaleCounts(presetOpts, Math.max(0.1, props.dots)) : presetOpts;
-  if (props.dotSize !== 1) opts = scaleRadii(opts, Math.max(0.1, props.dotSize));
-  // raw overrides land last, over everything the preset and multipliers set
-  if (props.opts) opts = { ...opts, ...props.opts };
+  // One pipeline for the size law, the density/radius multipliers, the raw
+  // overrides and the per-frame dot budget. `resolveDrawOptions` never hands
+  // back a cached object, so there is nothing here to clone before painting.
+  const { mode, speed: baseSpeed, opts } = resolveDrawOptions(props.state, size, {
+    dots: props.dots,
+    dotSize: props.dotSize,
+    opts: props.opts,
+    maxDots: props.maxDots
+  });
   const frameFn = props.frame ?? MODE_FRAMES[mode];
   const tint = parseTint(props.color);
   const effSpeed = baseSpeed * props.speed;
@@ -210,6 +230,7 @@ const renderDeps = computed(
       props.color,
       props.dots,
       props.dotSize,
+      props.maxDots,
       optsKey.value,
       props.frame
     ] as const

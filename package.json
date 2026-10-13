@@ -31,8 +31,9 @@
     "typecheck": "vue-tsc --noEmit -p tsconfig.app.json && vue-tsc --noEmit -p tsconfig.lib.json",
     "test:parity": "tsx scripts/parity.ts",
     "shot": "node scripts/shot.mjs",
-    "verify": "npm run test:parity && npm run verify:ui",
-    "verify:ui": "node scripts/verify-ui.mjs"
+    "verify": "npm run test:parity && npm run test:sizes && npm run verify:ui",
+    "verify:ui": "node scripts/verify-ui.mjs",
+    "test:sizes": "tsx scripts/size-law.ts"
   },
   "peerDependencies": {
     "vue": "^3.4.0"
